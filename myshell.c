@@ -2,9 +2,7 @@
 #include "myshell.h"
 #include <errno.h>
 #define MAXARGS 128
-// NOTE: Temporary environment variable
-#define PATH "/bin/"
-#define PATH_PLACEHOLDER "/bin"
+#define PATH_PLACEHOLDER "/bin:/usr/bin"
 #define PS1 "CSE4100-SP-P#1>"
 
 /* Function prototypes */
@@ -15,10 +13,12 @@ int builtin_command(char **argv);
 int exec_cmdline(char **argv, const char *cmdline, int bg);
 void exec_pipeline(const char **cmds[], size_t pos, int in_fd);
 
+void append_path(const char *path);
+
 int main() {
   char cmdline[MAXLINE]; /* Command line */
 
-  setenv("PATH", PATH_PLACEHOLDER, 1);
+  append_path(PATH_PLACEHOLDER);
 
   while (1) {
     /* Read */
@@ -169,6 +169,7 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
     return;
   }
 
+  /* create pipe */
   if (pipe(fd) == -1) {
     printf("pipe error\n");
     exit(1);
@@ -176,7 +177,7 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
   if (!(pid = Fork())) {
     // child process
     Close(fd[0]);
-    Dup2(in_fd, STDIN_FILENO);
+    Dup2(in_fd, STDIN_FILENO);  /* read from in_fd */
     Dup2(fd[1], STDOUT_FILENO); /* write to pipe output */
     if (execvp(cmds[pos][0], cmds[pos]) == -1) {
       printf("%s: Command not found.\n", cmds[pos][0]);
@@ -192,6 +193,18 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
   Close(in_fd);
 
   exec_pipeline(cmds, pos + 1, fd[0]); /* recursive tail call */
+}
+
+void append_path(const char *path) {
+  char buf[MAXBUF] = "";
+  char *old_path;
+  if (old_path = getenv("PATH")) {
+    // non-empty path env
+    strcat(buf, old_path);
+    strcat(buf, ":");
+  }
+  strcat(buf, path);
+  setenv("PATH", buf, 1);
 }
 
 /*********************************************

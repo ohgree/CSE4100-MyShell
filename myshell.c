@@ -4,6 +4,7 @@
 #define MAXARGS 128
 // NOTE: Temporary environment variable
 #define PATH "/bin/"
+#define PATH_PLACEHOLDER "/bin"
 #define PS1 "CSE4100-SP-P#1>"
 
 /* Function prototypes */
@@ -11,11 +12,14 @@ void eval(char *cmdline);
 int parseline(char *buf, char **argv);
 int builtin_command(char **argv);
 
-int exec_commandline_piped(char **argv, char *cmdline, int bg);
+int exec_cmdline(char **argv, const char *cmdline, int bg);
 
 int main() {
   char cmdline[MAXLINE]; /* Command line */
 
+  printf("DBG: env - %s\n", getenv("PATH"));
+  setenv("PATH", PATH_PLACEHOLDER, 1);
+  printf("DBG: env - %s\n", getenv("PATH"));
   while (1) {
     /* Read */
     printf("%s ", PS1);
@@ -42,7 +46,7 @@ void eval(char *cmdline) {
   if (argv[0] == NULL)
     return;                     /* Ignore empty lines */
   if (!builtin_command(argv)) { // quit -> exit(0), & -> ignore, other -> run
-    exec_commandline_piped(argv, cmdline, bg);
+    exec_cmdline(argv, cmdline, bg);
   }
   return;
 }
@@ -111,40 +115,79 @@ int parseline(char *buf, char **argv) {
 /* $end parseline */
 
 /* execute command line with pipeline support */
-int exec_commandline_piped(char **argv, char *cmdline, int bg) {
+int exec_cmdline(char **argv, const char *cmdline, int bg) {
   int fd[2];
   pid_t pid;
-  int cmd_count = 0;
-  char *cmds[MAXARGS][MAXLINE];
+  size_t cmd_idx = 0;
+  char buf[MAXLINE]; /* Holds modified command line */
+  char *cmds[MAXARGS][MAXARGS];
+
+  strncpy(buf, cmdline, strlen(cmdline));
 
   // Split command line by "|" and parse each lines
-  for (char *cmd = strtok(cmdline, "|"); cmd != NULL; cmd = strtok(NULL, "|")) {
-    // printf("DBG: in commandline '%s'\n", cmd);
+  for (char *cmd = strtok(buf, "|"); cmd != NULL; cmd = strtok(NULL, "|")) {
+    printf("DBG: in commandline '%s'\n", cmd);
     char *argv[MAXARGS];
     parseline(cmd, argv);
-    for (int i = 0; argv[i] != NULL; i++) {
-      //   printf("DBG: argv[%d] '%s'\n", i, argv[i]);
-      cmds[cmd_count++][i] = argv[i];
+    for (size_t i = 0; argv[i] != NULL; i++) {
+      printf("DBG: argv[%d] '%s'\n", i, argv[i]);
+      cmds[cmd_idx][i] = argv[i];
     }
+    cmd_idx++;
   }
 
-  return 0;
-  if (cmd_count == 1) {
+  // no pipeline needed
+  if (cmd_idx == 1) {
     char pathname[MAXLINE] = PATH;
-    strncat(pathname, cmds[0], MAXLINE - strlen(PATH) - 1);
+    // printf("DBG: %s\n", cmds[0][0]);
+    strncat(pathname, cmds[0][0], MAXLINE - strlen(PATH) - 1);
+    // printf("DBG: pathname %s", pathname);
     if (!(pid = Fork())) {
-      if (execve(pathname, argv, environ) < 0) { // ex) /bin/ls ls -al &
+      if (execvp(pathname, argv) == -1) { // ex) /bin/ls ls -al &
         printf("%s: Command not found.\n", argv[0]);
         exit(0);
       }
     }
     /* Parent waits for foreground job to terminate */
-    Waitpid(pid, NULL, 0);
     if (!bg) {
       int status;
-    } else // when there is background process!
+      Waitpid(pid, &status, 0);
+    } else { // when there is background process!
       printf("%d %s", pid, cmdline);
+    }
+    return 0;
   }
+}
+
+void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
+  // handle last command
+  if (cmds[pos + 1] == NULL) {
+    // in_fd read, STDOUT write (default)
+    Dup2(in_fd, STDIN_FILENO);
+    execvp(cmds[pos][0], cmds[pos]);
+    return;
+  }
+  /* <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
+  int fd[2];
+  if (pipe(fd) == -1) {
+    perror("pipe error\n");
+    exit(1);
+  }
+  if (fork() == -1) {
+    perror("fork error\n");
+    exit(1);
+  } else {
+    // child = 1;
+    Close(fd[0]);               /* unused */
+    Dup2(in_fd, STDIN_FILENO);  /* read from in_fd */
+    Dup2(fd[1], STDOUT_FILENO); /* write to fd[1] */
+    execvp(cmds[pos][0], cmds[pos]);
+    perror("execvp error\n");
+    exit(1);
+  }
+  Close(fd[1]);                        /* unused */
+  Close(in_fd);                        /* unused */
+  exec_pipeline(cmds, pos + 1, fd[0]); /* execute the rest */
 }
 
 /*********************************************
@@ -174,4 +217,19 @@ pid_t Waitpid(pid_t pid, int *iptr, int options) {
   if ((retpid = waitpid(pid, iptr, options)) < 0)
     unix_error("Waitpid error");
   return (retpid);
+}
+
+void Close(int fd) {
+  int rc;
+
+  if ((rc = close(fd)) < 0)
+    unix_error("Close error");
+}
+
+int Dup2(int fd1, int fd2) {
+  int rc;
+
+  if ((rc = dup2(fd1, fd2)) < 0)
+    unix_error("Dup2 error");
+  return rc;
 }

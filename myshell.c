@@ -11,6 +11,8 @@ void eval(char *cmdline);
 int parseline(char *buf, char **argv);
 int builtin_command(char **argv);
 
+int exec_commandline_piped(char **argv, char *cmdline, int bg);
+
 int main() {
   char cmdline[MAXLINE]; /* Command line */
 
@@ -40,20 +42,7 @@ void eval(char *cmdline) {
   if (argv[0] == NULL)
     return;                     /* Ignore empty lines */
   if (!builtin_command(argv)) { // quit -> exit(0), & -> ignore, other -> run
-    char command_path[MAXLINE] = PATH;
-    strncat(command_path, argv[0], MAXLINE - strlen(PATH) - 1);
-    if (!(pid = Fork())) {
-      if (execve(command_path, argv, environ) < 0) { // ex) /bin/ls ls -al &
-        printf("%s: Command not found.\n", argv[0]);
-        exit(0);
-      }
-    }
-    /* Parent waits for foreground job to terminate */
-    Waitpid(pid, NULL, 0);
-    if (!bg) {
-      int status;
-    } else // when there is background process!
-      printf("%d %s", pid, cmdline);
+    exec_commandline_piped(argv, cmdline, bg);
   }
   return;
 }
@@ -93,7 +82,9 @@ int parseline(char *buf, char **argv) {
   int argc;    /* Number of args */
   int bg;      /* Background job? */
 
-  buf[strlen(buf) - 1] = ' ';   /* Replace trailing '\n' with space */
+  // NOTE: Added check for newline
+  if (buf[strlen(buf) - 1] == '\n')
+    buf[strlen(buf) - 1] = ' '; /* Replace trailing '\n' with space */
   while (*buf && (*buf == ' ')) /* Ignore leading spaces */
     buf++;
 
@@ -118,6 +109,43 @@ int parseline(char *buf, char **argv) {
   return bg;
 }
 /* $end parseline */
+
+/* execute command line with pipeline support */
+int exec_commandline_piped(char **argv, char *cmdline, int bg) {
+  int fd[2];
+  pid_t pid;
+  int cmd_count = 0;
+  char *cmds[MAXARGS][MAXLINE];
+
+  // Split command line by "|" and parse each lines
+  for (char *cmd = strtok(cmdline, "|"); cmd != NULL; cmd = strtok(NULL, "|")) {
+    // printf("DBG: in commandline '%s'\n", cmd);
+    char *argv[MAXARGS];
+    parseline(cmd, argv);
+    for (int i = 0; argv[i] != NULL; i++) {
+      //   printf("DBG: argv[%d] '%s'\n", i, argv[i]);
+      cmds[cmd_count++][i] = argv[i];
+    }
+  }
+
+  return 0;
+  if (cmd_count == 1) {
+    char pathname[MAXLINE] = PATH;
+    strncat(pathname, cmds[0], MAXLINE - strlen(PATH) - 1);
+    if (!(pid = Fork())) {
+      if (execve(pathname, argv, environ) < 0) { // ex) /bin/ls ls -al &
+        printf("%s: Command not found.\n", argv[0]);
+        exit(0);
+      }
+    }
+    /* Parent waits for foreground job to terminate */
+    Waitpid(pid, NULL, 0);
+    if (!bg) {
+      int status;
+    } else // when there is background process!
+      printf("%d %s", pid, cmdline);
+  }
+}
 
 /*********************************************
  * Functions from csapp.c

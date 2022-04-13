@@ -89,9 +89,10 @@ int builtin_command(char **argv) {
 /* $begin parseline */
 /* parseline - Parse the command line and build the argv array */
 int parseline(char *buf, char **argv) {
-  char *delim; /* Points to first space delimiter */
-  int argc;    /* Number of args */
-  int bg;      /* Background job? */
+  char *delim;          /* Points to first space delimiter */
+  int argc;             /* Number of args */
+  int bg;               /* Background job? */
+  char next_char = ' '; /* next character to look for */
 
   buf[strlen(buf) - 1] = ' ';   /* Replace trailing '\n' with space */
   while (*buf && (*buf == ' ')) /* Ignore leading spaces */
@@ -99,12 +100,18 @@ int parseline(char *buf, char **argv) {
 
   /* Build the argv list */
   argc = 0;
-  while ((delim = strchr(buf, ' '))) {
+  while (delim = strchr(buf, next_char)) {
     argv[argc++] = buf;
     *delim = '\0';
     buf = delim + 1;
     while (*buf && (*buf == ' ')) /* Ignore spaces */
       buf++;
+
+    // NOTE: Add quotes support
+    if (*buf == '\'' || *buf == '\"') {
+      next_char = *buf;
+      buf++;
+    }
   }
   argv[argc] = NULL;
 

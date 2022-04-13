@@ -13,13 +13,13 @@ int parseline(char *buf, char **argv);
 int builtin_command(char **argv);
 
 int exec_cmdline(char **argv, const char *cmdline, int bg);
+void exec_pipeline(const char **cmds[], size_t pos, int in_fd);
 
 int main() {
   char cmdline[MAXLINE]; /* Command line */
 
-  printf("DBG: env - %s\n", getenv("PATH"));
   setenv("PATH", PATH_PLACEHOLDER, 1);
-  printf("DBG: env - %s\n", getenv("PATH"));
+
   while (1) {
     /* Read */
     printf("%s ", PS1);
@@ -119,75 +119,79 @@ int exec_cmdline(char **argv, const char *cmdline, int bg) {
   int fd[2];
   pid_t pid;
   size_t cmd_idx = 0;
-  char buf[MAXLINE]; /* Holds modified command line */
-  char *cmds[MAXARGS][MAXARGS];
+  char buf[MAXLINE];    /* Holds modified command line */
+  char **cmds[MAXARGS]; /* NULL-terminated array */
 
-  strncpy(buf, cmdline, strlen(cmdline));
-
-  // Split command line by "|" and parse each lines
+  /* Split command line by "|" and parse each lines */
+  strncpy(buf, cmdline, strlen(cmdline) + 1);
   for (char *cmd = strtok(buf, "|"); cmd != NULL; cmd = strtok(NULL, "|")) {
-    printf("DBG: in commandline '%s'\n", cmd);
     char *argv[MAXARGS];
     parseline(cmd, argv);
+    cmds[cmd_idx] = calloc(MAXARGS, sizeof(char *));
     for (size_t i = 0; argv[i] != NULL; i++) {
-      printf("DBG: argv[%d] '%s'\n", i, argv[i]);
       cmds[cmd_idx][i] = argv[i];
     }
     cmd_idx++;
   }
+  cmds[cmd_idx] = NULL;
 
-  // no pipeline needed
-  if (cmd_idx == 1) {
-    char pathname[MAXLINE] = PATH;
-    // printf("DBG: %s\n", cmds[0][0]);
-    strncat(pathname, cmds[0][0], MAXLINE - strlen(PATH) - 1);
-    // printf("DBG: pathname %s", pathname);
-    if (!(pid = Fork())) {
-      if (execvp(pathname, argv) == -1) { // ex) /bin/ls ls -al &
-        printf("%s: Command not found.\n", argv[0]);
-        exit(0);
-      }
-    }
-    /* Parent waits for foreground job to terminate */
-    if (!bg) {
-      int status;
-      Waitpid(pid, &status, 0);
-    } else { // when there is background process!
-      printf("%d %s", pid, cmdline);
-    }
-    return 0;
+  if (!(pid = Fork())) {
+    exec_pipeline(cmds, 0, STDIN_FILENO);
   }
+  /* Parent waits for foreground job to terminate */
+  if (!bg) {
+    int status;
+    Waitpid(pid, &status, 0);
+  } else { // when there is background process!
+    printf("%d %s", pid, cmdline);
+  }
+
+  /* free dynamically allocated memory */
+  for (size_t i = 0; i < cmd_idx; i++) {
+    free(cmds[i]);
+  }
+  return 0;
 }
 
+/* execute pipeline by recursion */
 void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
-  // handle last command
+  pid_t pid;
+  int fd[2];
+  int status;
+
+  /* handle last iteration */
   if (cmds[pos + 1] == NULL) {
-    // in_fd read, STDOUT write (default)
-    Dup2(in_fd, STDIN_FILENO);
-    execvp(cmds[pos][0], cmds[pos]);
+    Dup2(in_fd, STDIN_FILENO); /* in_fd read, STDOUT write (default) */
+    if (execvp(cmds[pos][0], cmds[pos]) == -1) { // ex) /bin/ls ls -al &
+      printf("%s: Command not found.\n", cmds[pos][0]);
+      exit(0);
+    }
     return;
   }
-  /* <in_fd cmds[pos] >fd[1] | <fd[0] cmds[pos+1] ... */
-  int fd[2];
+
   if (pipe(fd) == -1) {
-    perror("pipe error\n");
+    printf("pipe error\n");
     exit(1);
   }
-  if (fork() == -1) {
-    perror("fork error\n");
-    exit(1);
-  } else {
-    // child = 1;
-    Close(fd[0]);               /* unused */
-    Dup2(in_fd, STDIN_FILENO);  /* read from in_fd */
-    Dup2(fd[1], STDOUT_FILENO); /* write to fd[1] */
-    execvp(cmds[pos][0], cmds[pos]);
-    perror("execvp error\n");
+  if (!(pid = Fork())) {
+    // child process
+    Close(fd[0]);
+    Dup2(in_fd, STDIN_FILENO);
+    Dup2(fd[1], STDOUT_FILENO); /* write to pipe output */
+    if (execvp(cmds[pos][0], cmds[pos]) == -1) {
+      printf("%s: Command not found.\n", cmds[pos][0]);
+      exit(0);
+    }
     exit(1);
   }
-  Close(fd[1]);                        /* unused */
-  Close(in_fd);                        /* unused */
-  exec_pipeline(cmds, pos + 1, fd[0]); /* execute the rest */
+  // wait for child process to terminate
+  Waitpid(pid, &status, 0);
+
+  // Close unused file descriptors
+  Close(fd[1]);
+  Close(in_fd);
+
+  exec_pipeline(cmds, pos + 1, fd[0]); /* recursive tail call */
 }
 
 /*********************************************

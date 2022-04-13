@@ -82,9 +82,10 @@ int builtin_command(char **argv) {
 /* $begin parseline */
 /* parseline - Parse the command line and build the argv array */
 int parseline(char *buf, char **argv) {
-  char *delim; /* Points to first space delimiter */
-  int argc;    /* Number of args */
-  int bg;      /* Background job? */
+  char *delim;          /* Points to first space delimiter */
+  int argc;             /* Number of args */
+  int bg;               /* Background job? */
+  char next_char = ' '; /* next character to look for */
 
   // NOTE: Added check for newline
   if (buf[strlen(buf) - 1] == '\n')
@@ -94,12 +95,18 @@ int parseline(char *buf, char **argv) {
 
   /* Build the argv list */
   argc = 0;
-  while ((delim = strchr(buf, ' '))) {
+  while (delim = strchr(buf, next_char)) {
     argv[argc++] = buf;
     *delim = '\0';
     buf = delim + 1;
     while (*buf && (*buf == ' ')) /* Ignore spaces */
       buf++;
+
+    // NOTE: Add quotes support
+    if (*buf == '\'' || *buf == '\"') {
+      next_char = *buf;
+      buf++;
+    }
   }
   argv[argc] = NULL;
 
@@ -185,8 +192,6 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
     }
     exit(1);
   }
-  // wait for child process to terminate
-  Waitpid(pid, &status, 0);
 
   // Close unused file descriptors
   Close(fd[1]);

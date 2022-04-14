@@ -217,8 +217,14 @@ int parseline(char *buf, char **argv) {
     if (*buf == '\'' || *buf == '\"') {
       next_char = *buf;
       buf++;
+    } else {
+      next_char = ' ';
     }
   }
+  if (*buf) { /* handle last remaining argument just before NULL */
+    argv[argc++] = buf;
+  }
+
   argv[argc] = NULL;
 
   if (argc == 0) /* Ignore blank line */

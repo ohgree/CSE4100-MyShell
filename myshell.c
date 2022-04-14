@@ -17,13 +17,14 @@ void append_path(const char *path);
 
 int main() {
   char cmdline[MAXLINE]; /* Command line */
+  char *k;
 
   append_path(PATH_PLACEHOLDER);
 
   while (1) {
     /* Read */
     printf("%s ", PS1);
-    fgets(cmdline, MAXLINE, stdin);
+    k = fgets(cmdline, MAXLINE, stdin);
     if (feof(stdin))
       exit(0);
 
@@ -149,7 +150,7 @@ int exec_cmdline(char **argv, const char *cmdline, int bg) {
   cmds[cmd_idx] = NULL;
 
   if (!(pid = Fork())) {
-    exec_pipeline(cmds, 0, STDIN_FILENO);
+    exec_pipeline((const char ***)cmds, 0, STDIN_FILENO);
   }
   /* Parent waits for foreground job to terminate */
   if (!bg) {
@@ -175,7 +176,7 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
   /* handle last iteration */
   if (cmds[pos + 1] == NULL) {
     Dup2(in_fd, STDIN_FILENO); /* in_fd read, STDOUT write (default) */
-    if (execvp(cmds[pos][0], cmds[pos]) == -1) { // ex) /bin/ls ls -al &
+    if (execvp(cmds[pos][0], (char *const *)cmds[pos]) == -1) {
       printf("%s: Command not found.\n", cmds[pos][0]);
       exit(0);
     }
@@ -192,7 +193,7 @@ void exec_pipeline(const char **cmds[], size_t pos, int in_fd) {
     Close(fd[0]);
     Dup2(in_fd, STDIN_FILENO);  /* read from in_fd */
     Dup2(fd[1], STDOUT_FILENO); /* write to pipe output */
-    if (execvp(cmds[pos][0], cmds[pos]) == -1) {
+    if (execvp(cmds[pos][0], (char *const *)cmds[pos]) == -1) {
       printf("%s: Command not found.\n", cmds[pos][0]);
       exit(0);
     }

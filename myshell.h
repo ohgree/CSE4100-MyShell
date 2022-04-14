@@ -80,15 +80,15 @@ pid_t Waitpid(pid_t pid, int *iptr, int options);
 // pid_t Getpgrp();
 
 /* Signal wrappers */
-// typedef void handler_t(int);
-// handler_t *Signal(int signum, handler_t *handler);
-// void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-// void Sigemptyset(sigset_t *set);
-// void Sigfillset(sigset_t *set);
-// void Sigaddset(sigset_t *set, int signum);
-// void Sigdelset(sigset_t *set, int signum);
-// int Sigismember(const sigset_t *set, int signum);
-// int Sigsuspend(const sigset_t *set);
+typedef void handler_t(int);
+handler_t *Signal(int signum, handler_t *handler);
+void Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+void Sigemptyset(sigset_t *set);
+void Sigfillset(sigset_t *set);
+void Sigaddset(sigset_t *set, int signum);
+void Sigdelset(sigset_t *set, int signum);
+int Sigismember(const sigset_t *set, int signum);
+int Sigsuspend(const sigset_t *set);
 
 /* Sio (Signal-safe I/O) routines */
 // ssize_t sio_puts(char s[]);

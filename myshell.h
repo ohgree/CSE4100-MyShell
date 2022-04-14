@@ -76,7 +76,7 @@ pid_t Waitpid(pid_t pid, int *iptr, int options);
 // unsigned int Sleep(unsigned int secs);
 // void Pause(void);
 // unsigned int Alarm(unsigned int seconds);
-// void Setpgid(pid_t pid, pid_t pgid);
+void Setpgid(pid_t pid, pid_t pgid);
 // pid_t Getpgrp();
 
 /* Signal wrappers */
@@ -91,14 +91,14 @@ int Sigismember(const sigset_t *set, int signum);
 int Sigsuspend(const sigset_t *set);
 
 /* Sio (Signal-safe I/O) routines */
-// ssize_t sio_puts(char s[]);
-// ssize_t sio_putl(long v);
-// void sio_error(char s[]);
+ssize_t sio_puts(char s[]);
+ssize_t sio_putl(long v);
+void sio_error(char s[]);
 
 /* Sio wrappers */
-// ssize_t Sio_puts(char s[]);
-// ssize_t Sio_putl(long v);
-// void Sio_error(char s[]);
+ssize_t Sio_puts(char s[]);
+ssize_t Sio_putl(long v);
+void Sio_error(char s[]);
 
 /* Unix I/O wrappers */
 // int Open(const char *pathname, int flags, mode_t mode);

@@ -253,15 +253,12 @@ int exec_cmdline(char **argv, const char *cmdline, int bg) {
   /* Split command line by "|" and parse each lines */
   strncpy(buf, cmdline, strlen(cmdline) + 1);
   for (char *cmd = strtok(buf, "|"); cmd != NULL; cmd = strtok(NULL, "|")) {
-    printf("DBG: on line [%s]\n", cmd);
     char *argv[MAXARGS];
     parseline(cmd, argv);
     cmds[cmd_idx] = calloc(MAXARGS, sizeof(char *));
     for (size_t i = 0; argv[i] != NULL; i++) {
-      printf("[%s]", argv[i]);
       cmds[cmd_idx][i] = argv[i];
     }
-    printf("\n");
     cmd_idx++;
   }
   cmds[cmd_idx] = NULL;
@@ -272,7 +269,8 @@ int exec_cmdline(char **argv, const char *cmdline, int bg) {
   Sigemptyset(&mask_one);
   Sigaddset(&mask_one, SIGCHLD);
 
-  if (!(pid = Fork())) {
+  Sigprocmask(SIG_BLOCK, &mask_all, NULL);
+  if (!(pid = Fork())) { // child
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     Setpgid(0, 0);
     exec_pipeline(cmds, 0, STDIN_FILENO);
@@ -400,7 +398,7 @@ void sigchld_handler(int sig) {
 
   while ((pid = Waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
     job *j = get_job_by_pid(pid);
-    if (WIFSIGNALED(status)) {
+    if (WIFSIGNALED(status) || WIFEXITED(status)) {
       delete_job_by_id(j->id);
     } else if (WIFSTOPPED(status)) {
       Sio_puts("[");
@@ -408,18 +406,7 @@ void sigchld_handler(int sig) {
       Sio_puts("] stopped ");
       Sio_puts(j->cmd);
       j->state = STOPPED;
-    } else if (WIFEXITED(status)) {
-      delete_job_by_id(j->id);
     }
-  }
-
-  if ((pid = get_fg_job()->pid) <= 0) {
-    errno = olderrno;
-    return;
-  }
-
-  if (kill(-pid, sig) < 0) {
-    Sio_puts("SIGTSTP kill error\n");
   }
   errno = olderrno;
 }
